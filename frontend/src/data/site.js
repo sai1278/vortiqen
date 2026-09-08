@@ -13,7 +13,7 @@ export const ENQUIRY_URL =
 export const COMPANY = {
   name: 'Vortiqen',
   tagline: 'Software engineering for ambitious products and businesses.',
-  email: 'hello@vortiqen.com',
+  email: '',
   enquiryUrl: ENQUIRY_URL,
 }
 

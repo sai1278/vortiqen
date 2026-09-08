@@ -33,7 +33,7 @@ export default {
         // Fluid display scale — clamp() so 375px never overflows and 1440px stays cinematic.
         // Sized so the three hero lines fit their column without wrapping at
         // every tested width — the per-line mask reveal depends on that.
-        'display-xl': ['clamp(2rem, 5.4vw, 4rem)', { lineHeight: '1.04', letterSpacing: '-0.035em' }],
+        'display-xl': ['clamp(2.125rem, 5.8vw, 6.75rem)', { lineHeight: '1.0', letterSpacing: '-0.035em' }],
         'display-lg': ['clamp(1.875rem, 4.2vw, 3.25rem)', { lineHeight: '1.06', letterSpacing: '-0.03em' }],
         'display-md': ['clamp(1.75rem, 3.4vw, 2.75rem)', { lineHeight: '1.1', letterSpacing: '-0.022em' }],
         'display-sm': ['clamp(1.375rem, 2.2vw, 1.75rem)', { lineHeight: '1.2', letterSpacing: '-0.015em' }],

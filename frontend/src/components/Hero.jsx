@@ -46,13 +46,13 @@ export default function Hero() {
         {/* ---------------------------------------------------------- copy */}
         <motion.div
           style={reduced ? undefined : { y: copyY, opacity: fade }}
-          className="max-w-[54rem]"
+          className="w-full lg:w-fit lg:max-w-[64%] xl:max-w-[65%]"
         >
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: DUR.slow, delay: 0.15, ease: EASE_OUT }}
-            className="eyebrow mb-6 lg:mb-8 flex items-center gap-3"
+            className="eyebrow mb-4 lg:mb-6 flex items-center gap-3"
           >
             <span className="inline-block h-1.5 w-1.5 rotate-45 bg-accent" />
             Software &amp; Systems Engineering
@@ -98,7 +98,7 @@ export default function Hero() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: DUR.slow, delay: 0.75, ease: EASE_OUT }}
-            className="mt-6 lg:mt-8 max-w-measure text-lead text-fg-1"
+            className="mt-5 lg:mt-6 max-w-[42rem] text-lead lg:text-[1.25rem] lg:leading-[1.65] text-fg-1"
           >
             Vortiqen designs and engineers scalable digital products, intelligent systems,
             and reliable software infrastructure for ambitious teams.
@@ -108,7 +108,7 @@ export default function Hero() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: DUR.slow, delay: 0.9, ease: EASE_OUT }}
-            className="mt-8 lg:mt-11 flex flex-col gap-3 sm:flex-row sm:items-center"
+            className="mt-6 lg:mt-8 flex flex-col gap-3 sm:flex-row sm:items-center"
           >
             <Button href={ENQUIRY_URL}>
               Start a Project
@@ -128,16 +128,15 @@ export default function Hero() {
           One element, two compositions. It sits after the copy in the DOM, so
           on mobile it flows below the CTAs as its own band — never behind the
           type, where its nodes landed on top of words. From lg it becomes
-          absolute and takes the right half, letting the headline keep the full
-          shell width so it never has to wrap. */}
+          absolute and takes the right side as a subtle supporting element. */}
       <motion.div
         aria-hidden="true"
         style={reduced ? undefined : { y: visualY, opacity: fade }}
-        className="pointer-events-none relative mt-6 lg:mt-0 flex h-[20vh] min-h-[140px] max-h-[220px] w-full items-center justify-center lg:absolute lg:inset-y-0 lg:right-0 lg:h-full lg:w-[46%] lg:justify-end lg:pr-[2vw]"
+        className="pointer-events-none relative mt-8 sm:mt-10 flex h-[180px] sm:h-[220px] w-full items-center justify-center lg:absolute lg:inset-y-0 lg:right-0 lg:mt-0 lg:flex lg:h-full lg:max-h-none lg:w-[36%] xl:w-[34%] lg:items-center lg:justify-end lg:pr-6 xl:pr-10 2xl:pr-16"
       >
         <motion.div
           style={reduced ? undefined : { x: px, y: py }}
-          className="aspect-[300/420] h-full max-h-[620px] text-fg-1 lg:h-[80%]"
+          className="aspect-[300/420] h-auto w-auto max-h-[560px] max-w-[390px] text-fg-1 opacity-70 lg:opacity-80 lg:h-[72%]"
         >
           <HeroVisual />
         </motion.div>
