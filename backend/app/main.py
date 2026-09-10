@@ -7,7 +7,14 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 
+import json
+import time
+import uuid
+from prometheus_client import Counter, Histogram, CONTENT_TYPE_LATEST, generate_latest
+from starlette.responses import Response
+
 from app.config import settings
+from app.database import close_db, init_db
 from app.schemas import ContactCreate, ContactResponse, HealthResponse
 from app.services.enquiries import enquiry_service
 from app.services.rate_limit import client_identifier, rate_limiter
@@ -15,6 +22,23 @@ from app.services.rate_limit import client_identifier, rate_limiter
 logger = logging.getLogger("uvicorn.error")
 
 API_VERSION = "1.0.0"
+
+# Prometheus metrics
+REQUEST_COUNT = Counter(
+    "vortiqen_http_requests_total",
+    "Total HTTP requests",
+    ["method", "endpoint", "status"],
+)
+REQUEST_LATENCY = Histogram(
+    "vortiqen_http_request_duration_seconds",
+    "HTTP request latency in seconds",
+    ["endpoint"],
+)
+ENQUIRIES_TOTAL = Counter(
+    "vortiqen_enquiries_total",
+    "Total business enquiries submitted",
+    ["status"],
+)
 
 # Messages shown to visitors. Deliberately generic: a failure reason belongs in
 # the log, not in a response that a stranger can read.
@@ -35,19 +59,25 @@ async def lifespan(_: FastAPI):
         ", ".join(settings.cors_origins),
     )
     logger.info(
-        "Enquiry delivery — webhook=%s, smtp=%s, local_store_accepted=%s",
+        "Enquiry delivery — db=%s, webhook=%s, baserow=%s, smtp=%s, local_store_accepted=%s",
+        settings.database_configured,
         settings.webhook_configured,
+        settings.baserow_configured,
         settings.smtp_configured,
         settings.local_store_counts_as_delivery,
     )
+    # Initialize database
+    await init_db()
+
     if not settings.can_accept_enquiries:
         logger.critical(
-            "/api/contact will REJECT submissions: no external channel is configured "
+            "/api/contact will REJECT submissions: no persistence or external channel is configured "
             "and the local store is not accepted in this environment. "
-            "Set NOTIFICATION_WEBHOOK_URL or SMTP_*, or "
+            "Set DATABASE_URL, NOTIFICATION_WEBHOOK_URL or SMTP_*, or "
             "ALLOW_LOCAL_PERSISTENCE_IN_PRODUCTION=true."
         )
     yield
+    await close_db()
 
 
 app = FastAPI(
@@ -58,6 +88,45 @@ app = FastAPI(
     version=API_VERSION,
     lifespan=lifespan,
 )
+
+@app.middleware("http")
+async def security_and_observability_middleware(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    start_time = time.monotonic()
+
+    response = await call_next(request)
+
+    latency = time.monotonic() - start_time
+    latency_ms = round(latency * 1000, 2)
+
+    # Attach headers
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+
+    # Update Prometheus metrics
+    endpoint = request.url.path
+    status_code = str(response.status_code)
+    REQUEST_COUNT.labels(method=request.method, endpoint=endpoint, status=status_code).inc()
+    REQUEST_LATENCY.labels(endpoint=endpoint).observe(latency)
+
+    # Structured JSON log (exclude noisy health/metrics checks from high-severity logging)
+    if endpoint not in ("/api/health", "/metrics", "/"):
+        logger.info(
+            json.dumps({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "request_id": request_id,
+                "method": request.method,
+                "path": endpoint,
+                "status": response.status_code,
+                "latency_ms": latency_ms,
+                "client_ip": client_identifier(request),
+            })
+        )
+
+    return response
 
 # ---------------------------------------------------------------------- CORS
 #
@@ -91,6 +160,12 @@ async def root() -> dict:
     }
 
 
+@app.get("/metrics", include_in_schema=False)
+async def metrics() -> Response:
+    """Prometheus metrics endpoint."""
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.get("/api/health", response_model=HealthResponse, tags=["Health"])
 async def health_check() -> HealthResponse:
     """Readiness for the Vortiqen website.
@@ -105,9 +180,9 @@ async def health_check() -> HealthResponse:
         version=API_VERSION,
         accepting_enquiries=accepting,
         delivery_channels={
-            "webhook": settings.webhook_configured,
+            "webhook": settings.webhook_configured or settings.baserow_configured,
             "email": settings.smtp_configured,
-            "local_store": settings.local_store_counts_as_delivery,
+            "local_store": settings.local_store_counts_as_delivery or settings.database_configured,
         },
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
@@ -131,6 +206,7 @@ async def submit_contact(payload: ContactCreate, request: Request) -> ContactRes
     key = client_identifier(request)
 
     if not await rate_limiter.allow(key):
+        ENQUIRIES_TOTAL.labels(status="rate_limited").inc()
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=MSG_RATE_LIMITED,
@@ -140,6 +216,7 @@ async def submit_contact(payload: ContactCreate, request: Request) -> ContactRes
         outcome = await enquiry_service.submit(payload)
     except Exception:
         # Unexpected failure: full detail to the log, nothing to the caller.
+        ENQUIRIES_TOTAL.labels(status="error").inc()
         logger.exception("Unhandled error while handling an enquiry")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -147,11 +224,13 @@ async def submit_contact(payload: ContactCreate, request: Request) -> ContactRes
         )
 
     if not outcome.delivered:
+        ENQUIRIES_TOTAL.labels(status="undelivered").inc()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=MSG_FAILURE,
         )
 
+    ENQUIRIES_TOTAL.labels(status="success").inc()
     logger.info(
         "Enquiry %s delivered (stored=%s, channels=%s)",
         outcome.reference,

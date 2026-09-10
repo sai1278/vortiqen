@@ -34,9 +34,10 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:3000"
 
     # --- Persistence ------------------------------------------------------
-    # Append-only JSONL record of enquiries. Simple on purpose: the current
-    # requirement is "don't lose a business enquiry", which a durable local
-    # file plus an external channel satisfies without adding a database.
+    # Relational database URL (PostgreSQL in production, e.g. postgresql+asyncpg://user:pass@host:5432/dbname).
+    DATABASE_URL: Optional[str] = None
+
+    # Append-only JSONL record of enquiries (local development fallback).
     ENQUIRY_STORE_PATH: str = "data/enquiries.jsonl"
 
     # In production the local file alone is NOT accepted as delivery unless an
@@ -45,8 +46,14 @@ class Settings(BaseSettings):
     ALLOW_LOCAL_PERSISTENCE_IN_PRODUCTION: bool = False
 
     # --- Outbound notification channels ----------------------------------
+    # Slack / Discord / Zapier / custom endpoint
     NOTIFICATION_WEBHOOK_URL: Optional[str] = None
     NOTIFICATION_WEBHOOK_TIMEOUT_SECONDS: float = 8.0
+
+    # Baserow Table API integration (server-side)
+    BASEROW_TABLE_URL: Optional[str] = None
+    BASEROW_API_TOKEN: Optional[str] = None
+    BASEROW_TIMEOUT_SECONDS: float = 8.0
 
     SMTP_HOST: Optional[str] = None
     SMTP_PORT: int = 587
@@ -78,8 +85,16 @@ class Settings(BaseSettings):
         return self.ENVIRONMENT == "production"
 
     @property
+    def database_configured(self) -> bool:
+        return bool(self.DATABASE_URL)
+
+    @property
     def webhook_configured(self) -> bool:
         return bool(self.NOTIFICATION_WEBHOOK_URL)
+
+    @property
+    def baserow_configured(self) -> bool:
+        return bool(self.BASEROW_TABLE_URL and self.BASEROW_API_TOKEN)
 
     @property
     def smtp_configured(self) -> bool:
@@ -87,7 +102,7 @@ class Settings(BaseSettings):
 
     @property
     def external_channel_configured(self) -> bool:
-        return self.webhook_configured or self.smtp_configured
+        return self.webhook_configured or self.smtp_configured or self.baserow_configured
 
     @property
     def local_store_counts_as_delivery(self) -> bool:
@@ -100,7 +115,11 @@ class Settings(BaseSettings):
     @property
     def can_accept_enquiries(self) -> bool:
         """False means /api/contact will fail fast rather than lie."""
-        return self.external_channel_configured or self.local_store_counts_as_delivery
+        return (
+            self.database_configured
+            or self.external_channel_configured
+            or self.local_store_counts_as_delivery
+        )
 
     # -------------------------------------------------------- validation
     @model_validator(mode="after")

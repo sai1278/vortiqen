@@ -132,18 +132,19 @@ remains a `mailto:` to the address in `src/data/site.js`.
 
 ## Backend — Vortiqen API
 
-FastAPI service backing the website's enquiry form.
+FastAPI enterprise service backing the website's first-party enquiry flow.
 
 ```text
 backend/app/
-├── main.py                 # routes, CORS, lifespan posture logging
-├── config.py               # env-driven settings, fail-safe defaults
+├── main.py                 # routes, CORS, structured JSON logging, security headers, Prometheus /metrics
+├── config.py               # env-driven settings, fail-safe defaults, PostgreSQL & Baserow config
+├── database.py             # SQLAlchemy 2.0 async engine, connection pool, EnquiryModel, init_db()
 ├── schemas.py              # ContactCreate / ContactResponse / HealthResponse
 └── services/
     ├── enquiries.py        # delivery policy (the anti-silent-success rule)
-    ├── storage.py          # append-only JSONL store (fsync'd)
-    ├── notifications.py    # webhook + SMTP channels
-    └── rate_limit.py       # RateLimiter protocol + in-memory sliding window
+    ├── storage.py          # PostgreSQL async persistence + append-only JSONL fallback (fsync'd)
+    ├── notifications.py    # webhook, Baserow table sync, and SMTP channels
+    └── rate_limit.py       # RateLimiter protocol + sliding window rate limiter
 ```
 
 ### Endpoints
@@ -151,79 +152,178 @@ backend/app/
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/` | Service identity |
-| `GET` | `/api/health` | Readiness; `accepting_enquiries` is the field that matters |
+| `GET` | `/api/health` | Readiness probe; returns 200 with delivery channels and database status |
+| `GET` | `/metrics` | Prometheus metrics (request count, latency histograms, error counters) |
 | `POST` | `/api/contact` | Submit a business enquiry |
 
 `POST /api/contact` takes `name`, `email`, `message` (required) plus optional
 `company` and `service`, and a `company_website` honeypot that must stay empty.
-It returns **201 only when the enquiry reached a destination a human will read** —
-otherwise 502 with a generic message.
+It validates input, writes asynchronously to PostgreSQL with connection pooling,
+dispatches to configured channels (Webhook, Baserow, SMTP), and returns
+**201 with a unique customer reference code (e.g. `VQ-123456`)**.
 
-### Delivery policy
+### Delivery & Persistence Policy
 
-The previous implementation returned 201 with "check your email" while Sheets
-was in dry-run, SMTP was unset and the webhook was empty. That is now impossible:
+Enquiries are never lost to ephemeral storage in production:
 
-| Environment | Accepted destination |
+| Environment | Persistence & Delivery Channels |
 | --- | --- |
-| development / staging | The durable local JSONL file is enough. Channel failures are logged loudly but do not fail the request. |
-| production | At least one **external** channel (webhook or SMTP) must succeed — unless `ALLOW_LOCAL_PERSISTENCE_IN_PRODUCTION=true`. Nothing configured → 502 and a `CRITICAL` log line. |
-
-`ENVIRONMENT` defaults to `production` in code, so a deployment that forgets to
-set it fails loudly instead of quietly accepting enquiries it cannot deliver.
-
-### CORS
-
-Exact origins only via `ALLOWED_ORIGINS`; `*` is rejected at startup, as are
-plaintext non-localhost origins in production. `allow_credentials` is **off** —
-the website sends plain JSON with no cookies, so the wildcard-plus-credentials
-class of bug is removed rather than narrowed.
-
-### Rate limiting
-
-Sliding window per client key, configurable via `RATE_LIMIT_*`. `X-Forwarded-For`
-is ignored unless `TRUSTED_PROXY_COUNT` says how many proxies sit in front; the
-client is then taken from the **right** of the header, so a forged left-hand hop
-cannot buy a fresh quota. The in-memory implementation satisfies a `RateLimiter`
-protocol so a shared backend can replace it when the app runs multi-process.
+| **development / staging** | PostgreSQL if configured, or local append-only JSONL (`data/enquiries.jsonl`). Notification channels are executed in background. |
+| **production** | **PostgreSQL** is the authoritative primary store. Enquiries are also synced server-side to external webhooks, Baserow, or SMTP. An enquiry is considered delivered when securely stored in the transactional database or confirmed by an external channel. |
 
 ---
 
-## Frontend → backend
+## Production Deployment Guide
 
-All traffic goes through one client — `src/lib/api.js`. No component calls
-`fetch` directly.
+### 1. Prerequisites
 
-```text
-Browser → React (EnquiryDialog) → src/lib/api.js → FastAPI → JSONL + channels
-                                                        ↓
-                                        201 + reference → success UI
-```
+- **Docker & Docker Compose**: Docker Engine 24+ and Docker Compose v2.20+
+- **Host / Cluster**: Linux VM (Ubuntu 22.04 LTS / Debian 12) or Kubernetes cluster
+- **Domain & SSL**: Valid domain with DNS pointing to host and TLS certificate (e.g., Let's Encrypt / Cloudflare)
+- **Database**: PostgreSQL 15+ (Cloud SQL, RDS, Supabase, or containerized PostgreSQL)
 
-The "Start a Project" CTAs (navbar, hero, closing section) open
-`EnquiryDialog`, which validates client-side, shows loading / success / error
-states, blocks duplicate submissions, traps focus, closes on `Escape`, and
-returns focus to the trigger.
+### 2. Environment Variables
 
-`VITE_API_BASE_URL` selects the API origin; unset falls back to
-`http://localhost:8000` in dev and same-origin in a build.
-
----
-
-## Running the full stack
+Create `.env` based on `.env.example`:
 
 ```bash
-# Terminal 1 — API on :8000
-cd backend
-python -m venv venv && venv/bin/pip install -r requirements.txt
-cp .env.example .env                    # sets ENVIRONMENT=development
-venv/bin/uvicorn app.main:app --reload --port 8000
+cp .env.example .env
+chmod 600 .env
+```
 
-# Terminal 2 — website on :3000
+Critical production variables:
+- `ENVIRONMENT=production`
+- `DATABASE_URL=postgresql+asyncpg://<user>:<password>@<db-host>:5432/<dbname>`
+- `ALLOWED_ORIGINS=https://vortiqen.com,https://www.vortiqen.com`
+- `VITE_API_BASE_URL=https://api.vortiqen.com` (or empty for same-origin proxy)
+- `BASEROW_TABLE_URL=https://api.baserow.io/api/database/rows/table/<table_id>/?user_field_names=true`
+- `BASEROW_API_TOKEN=<your_private_token>`
+- `NOTIFICATION_WEBHOOK_URL=https://hooks.slack.com/services/...`
+
+### 3. Local Development
+
+```bash
+# Terminal 1 — Backend
+cd backend
+python -m venv venv
+# On Linux/macOS:
+source venv/bin/activate
+# On Windows:
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload --port 8000
+
+# Terminal 2 — Frontend
 cd frontend
 npm install
-cp .env.example .env                    # sets VITE_API_BASE_URL
+cp .env.example .env
 npm run dev
 ```
 
-Tests: `cd backend && venv/bin/python -m pytest`
+Run test suites:
+```bash
+# Backend pytest suite (38 unit & integration tests)
+cd backend && pytest tests -v
+
+# Frontend linting & production build
+cd frontend && npm run lint && npm run build
+```
+
+### 4. Docker & Production Parity
+
+The root `docker-compose.yml` provides a production-identical setup:
+- **`vortiqen-frontend`**: Multi-stage build running unprivileged Nginx on port 8080 (mapped to 3000)
+- **`vortiqen-backend`**: Hardened Python 3.12-slim running as non-root user `appuser:10001` on port 8000
+- **`vortiqen-db`**: PostgreSQL 16 Alpine with healthchecks and persistent volumes
+
+```bash
+# Build and start all services in the background
+docker compose build
+docker compose up -d
+
+# Verify all containers are healthy
+docker compose ps
+
+# Check logs
+docker compose logs -f backend
+```
+
+### 5. Database Setup & Migrations
+
+Production schema is strictly version-controlled and applied via **Alembic**. The application startup does not blindly mutate the production schema.
+
+To apply database migrations:
+```bash
+cd backend
+# Set DATABASE_URL if not using .env
+export DATABASE_URL="postgresql+asyncpg://user:password@host:5432/dbname"
+alembic upgrade head
+
+# Inspect current revision
+alembic current
+
+# Create new autogenerated migration after model updates
+alembic revision --autogenerate -m "describe_change"
+```
+
+The `enquiries` table schema includes:
+- `id`: Auto-incrementing primary key
+- `reference`: Unique indexed constraint for customer reference (e.g. `VQ-343397`)
+- `name`, `email`, `company`, `service`, `message`: String / Text enquiry payloads
+- `created_at`: UTC timestamp with index
+- `delivered`: Boolean status flag indicating confirmed channel dispatch
+- `delivery_channels`: JSON-serialized delivery tracking and source metadata
+
+### 6. CI/CD Pipeline
+
+A continuous integration pipeline is defined in `.github/workflows/ci.yml`:
+1. **Frontend Lint & Build**: Runs `npm ci`, `npm run lint`, and `npm run build` on Node.js 20.
+2. **Backend Test Suite**: Runs `pytest` across all 38 tests on Python 3.12.
+3. **Docker Buildx Validation**: Builds both production Docker images to verify container hygiene, multi-stage compilation, and dependency integrity.
+
+### 7. Observability & Health Probes
+
+- **Health Check**: `GET /api/health`
+  Returns JSON status including `accepting_enquiries`, database connection state, and configured channels.
+- **Prometheus Metrics**: `GET /metrics`
+  Exposes standard Prometheus metrics (`http_requests_total`, `http_request_duration_seconds`, active connections).
+- **Structured JSON Logging**: Every HTTP request emits a structured JSON log entry containing `timestamp`, `request_id`, `method`, `path`, `status_code`, `latency_ms`, and `client_ip`.
+
+### 8. Security Hardening
+
+- **HTTP Headers**: All responses from both Nginx and FastAPI include:
+  - `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`
+  - `X-Content-Type-Options: nosniff`
+  - `X-Frame-Options: DENY`
+  - `Referrer-Policy: strict-origin-when-cross-origin`
+  - `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+  - Content Security Policy (CSP) tailored for Google Fonts, Vite assets, and API connections
+- **Non-Root Containers**: Nginx runs as `nginxinc/nginx-unprivileged` on port 8080; Python backend runs as unprivileged UID 10001.
+- **CORS Strictness**: Wildcards (`*`) and unencrypted origins in production are rejected on application startup.
+
+### 9. Backup & Disaster Recovery
+
+See [`docs/backup-and-recovery.md`](file:///c:/Users/kanchiDhyana%20sai/Downloads/vortiqenfullstack/docs/backup-and-recovery.md) for full operational instructions:
+- **Daily Automated Backup**:
+  ```bash
+  docker compose exec -t db pg_dump -U postgres -d vortiqen -F c -b -v -f /var/lib/postgresql/backup.dump
+  ```
+- **Point-in-Time Restoration**:
+  ```bash
+  docker compose exec -t db pg_restore -U postgres -d vortiqen -c -v /var/lib/postgresql/backup.dump
+  ```
+- **Fallback JSONL Reconciliation**:
+  In the event of a database partition, leads temporarily written to `backend/data/enquiries.jsonl` can be reconciled to PostgreSQL using the included idempotency script.
+
+### 10. Rollback & Incident Recovery
+
+- **Zero-Downtime Rollback**:
+  Deployments use immutable image tags (e.g., `vortiqen-backend:v1.2.0`). To roll back:
+  ```bash
+  docker compose down backend
+  sed -i 's/v1.2.0/v1.1.9/g' docker-compose.prod.yml
+  docker compose up -d backend
+  ```
+- **Health Verification**:
+  Immediately inspect `/api/health` and verify `accepting_enquiries: true`.

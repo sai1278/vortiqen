@@ -9,8 +9,12 @@ import Technology from './components/Technology'
 import About from './components/About'
 import CTA from './components/CTA'
 import Footer from './components/Footer'
+import EnquiryDialog from './components/EnquiryDialog'
+import { useEnquiry } from './hooks/useEnquiry'
 
 export default function App() {
+  const { isOpen, preselectedService, openEnquiry, closeEnquiry } = useEnquiry()
+
   return (
     /*
      * reducedMotion="user" makes Framer drop transform and layout animations
@@ -26,20 +30,26 @@ export default function App() {
         Skip to content
       </a>
 
-      <Navbar />
+      <Navbar onOpenEnquiry={openEnquiry} />
 
       <main id="main">
-        <Hero />
+        <Hero onOpenEnquiry={openEnquiry} />
         <Intro />
-        <Services />
+        <Services onOpenEnquiry={openEnquiry} />
         <Process />
-        <Work />
+        <Work onOpenEnquiry={openEnquiry} />
         <Technology />
         <About />
-        <CTA />
+        <CTA onOpenEnquiry={openEnquiry} />
       </main>
 
-      <Footer />
+      <Footer onOpenEnquiry={openEnquiry} />
+
+      <EnquiryDialog
+        isOpen={isOpen}
+        onClose={closeEnquiry}
+        initialService={preselectedService}
+      />
     </MotionConfig>
   )
 }

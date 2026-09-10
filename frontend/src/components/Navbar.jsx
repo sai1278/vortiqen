@@ -5,7 +5,7 @@ import Button from './ui/Button'
 import VortiqenMark from './ui/VortiqenMark'
 import { useScrolled } from '../hooks/useScrolled'
 import { useActiveSection } from '../hooks/useActiveSection'
-import { COMPANY, NAV, ENQUIRY_URL } from '../data/site'
+import { COMPANY, NAV } from '../data/site'
 import { DUR, EASE_OUT, EASE_UI } from '../lib/motion'
 
 /**
@@ -15,7 +15,7 @@ import { DUR, EASE_OUT, EASE_UI } from '../lib/motion'
  * padding, a translucent canvas, and a hairline underneath. The transition is
  * a height/colour change only — no layout reflow of the page beneath.
  */
-export default function Navbar() {
+export default function Navbar({ onOpenEnquiry }) {
   const scrolled = useScrolled(24)
   const [open, setOpen] = useState(false)
 
@@ -99,7 +99,7 @@ export default function Navbar() {
 
           <div className="flex items-center gap-2">
             <Button
-              href={ENQUIRY_URL}
+              onClick={() => onOpenEnquiry?.()}
               className="hidden sm:inline-flex"
             >
               Start a Project
@@ -174,8 +174,10 @@ export default function Navbar() {
                 className="mt-auto pb-10 pt-8"
               >
                 <Button
-                  href={ENQUIRY_URL}
-                  onClick={() => setOpen(false)}
+                  onClick={() => {
+                    setOpen(false)
+                    onOpenEnquiry?.()
+                  }}
                   className="w-full"
                 >
                   Start a Project

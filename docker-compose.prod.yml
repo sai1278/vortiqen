@@ -1,0 +1,95 @@
+# ==============================================================================
+# Vortiqen Production Compose Specification (Immutable Image Tags)
+# Designed for production VM / Cloud Compute (AWS EC2/Lightsail, GCP Compute, Hetzner, etc.)
+# ==============================================================================
+services:
+  frontend:
+    image: ghcr.io/sai1278/vortiqen-frontend:v1.0.0
+    container_name: vortiqen-frontend-prod
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    read_only: false
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - NODE_ENV=production
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+        reservations:
+          cpus: '0.10'
+          memory: 64M
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    image: ghcr.io/sai1278/vortiqen-backend:v1.0.0
+    container_name: vortiqen-backend-prod
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - APP_NAME=Vortiqen API
+      - DATABASE_URL=${DATABASE_URL}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://vortiqen.com,https://www.vortiqen.com}
+      - ALLOW_LOCAL_PERSISTENCE_IN_PRODUCTION=false
+      - TRUSTED_PROXY_COUNT=1
+      - RATE_LIMIT_WINDOW_SECONDS=600
+      - RATE_LIMIT_MAX_REQUESTS=5
+      - BASEROW_TABLE_URL=${BASEROW_TABLE_URL:-}
+      - BASEROW_API_TOKEN=${BASEROW_API_TOKEN:-}
+      - NOTIFICATION_WEBHOOK_URL=${NOTIFICATION_WEBHOOK_URL:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SENDER_EMAIL=${SENDER_EMAIL:-}
+      - TEAM_INBOX=${TEAM_INBOX:-}
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # Optional Cloudflare Tunnel container running alongside services
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: vortiqen-tunnel
+    restart: always
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy

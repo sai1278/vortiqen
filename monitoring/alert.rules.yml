@@ -1,0 +1,29 @@
+groups:
+  - name: vortiqen_alerts
+    rules:
+      - alert: BackendDown
+        expr: up{job="vortiqen-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Vortiqen Backend API is down"
+          description: "Backend container has not responded to Prometheus scrape for > 1 minute."
+
+      - alert: HighHttp5xxRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate on API"
+          description: "5xx HTTP responses exceed 5% of all traffic over the last 5 minutes."
+
+      - alert: HighApiLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API 95th percentile latency exceeds 1.0s"
+          description: "95% of API requests took longer than 1000ms over 5 minutes."

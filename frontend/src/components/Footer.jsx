@@ -24,10 +24,10 @@ export default function Footer() {
             </div>
             <p className="mt-4 max-w-xs text-sm text-fg-1">{COMPANY.tagline}</p>
             <a
-              href={`mailto:${COMPANY.email}`}
+              href={`mailto:${COMPANY.email || 'hello@vortiqen.com'}`}
               className="mt-5 inline-block py-1 font-mono text-[0.75rem] text-fg-2 underline decoration-[var(--line-strong)] decoration-1 underline-offset-4 transition-colors duration-fast ease-ui hover:text-fg-0 hover:decoration-accent"
             >
-              {COMPANY.email}
+              {COMPANY.email || 'hello@vortiqen.com'}
             </a>
           </div>
 

@@ -1,0 +1,32 @@
+# ==============================================================================
+# Cloudflare Zero-Trust Tunnel Configuration (cloudflared)
+# Connects public domains (vortiqen.com / api.vortiqen.com) to origin containers
+# without opening inbound ports on the origin firewall.
+# ==============================================================================
+
+tunnel: <YOUR_TUNNEL_UUID>
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  # 1. Production API endpoint
+  - hostname: api.vortiqen.com
+    service: http://backend:8000
+    originRequest:
+      connectTimeout: 10s
+      noTLSVerify: true
+
+  # 2. Production Website (Apex and WWW)
+  - hostname: vortiqen.com
+    service: http://frontend:8080
+    originRequest:
+      connectTimeout: 10s
+      noTLSVerify: true
+
+  - hostname: www.vortiqen.com
+    service: http://frontend:8080
+    originRequest:
+      connectTimeout: 10s
+      noTLSVerify: true
+
+  # 3. Catch-all fallback
+  - service: http_status:404

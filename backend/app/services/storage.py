@@ -56,11 +56,18 @@ class EnquiryStore:
             handle.flush()
             os.fsync(handle.fileno())
 
-    async def append(self, payload: ContactCreate, reference: str) -> bool:
+    async def append(
+        self,
+        payload: ContactCreate,
+        reference: str,
+        delivered: bool = False,
+        delivery_channels: Optional[dict] = None,
+    ) -> bool:
         """Persist one enquiry. Returns True on success, False on failure.
 
-        Never raises: the caller decides what a storage failure means for the
-        response, and a storage failure must not surface as a stack trace.
+        If a relational database is configured via DATABASE_URL, writes to PostgreSQL
+        with a transaction and connection pooling. Also writes to durable local JSONL
+        as an auxiliary record when appropriate.
         """
         record = {
             "reference": reference,
@@ -71,14 +78,42 @@ class EnquiryStore:
             "service": payload.service,
             "message": payload.message,
         }
+
+        db_success = False
+        from app.database import async_session_factory, EnquiryModel
+
+        if async_session_factory is not None:
+            try:
+                async with async_session_factory() as session:
+                    async with session.begin():
+                        entry = EnquiryModel(
+                            reference=reference,
+                            name=payload.name,
+                            email=str(payload.email),
+                            company=payload.company,
+                            service=payload.service,
+                            message=payload.message,
+                            delivered=delivered,
+                            delivery_channels=delivery_channels,
+                        )
+                        session.add(entry)
+                db_success = True
+            except Exception:
+                logger.exception(
+                    "Failed to persist enquiry %s to relational database", reference
+                )
+
+        # Local file write (auxiliary/fallback)
+        file_success = False
         try:
             async with self._lock:
                 await asyncio.to_thread(self._write_sync, record)
-            return True
+            file_success = True
         except Exception:
-            # Log without the message body or email address.
             logger.exception("Failed to persist enquiry %s to %s", reference, self._path)
-            return False
+
+        # Succeed if either the database or file storage succeeded
+        return db_success or file_success
 
     def read_all(self) -> list[dict]:
         """Read every stored enquiry. Used by tests and local inspection."""

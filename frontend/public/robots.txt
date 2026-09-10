@@ -1,0 +1,5 @@
+# Vortiqen robots.txt
+User-agent: *
+Allow: /
+
+Sitemap: https://vortiqen.com/sitemap.xml

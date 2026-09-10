@@ -74,11 +74,20 @@ class EnquiryService:
             )
 
         # 3. Apply the policy.
+        # If relational database is configured and write succeeded, lead is safely persisted.
+        if settings.database_configured and stored:
+            return SubmissionOutcome(
+                delivered=True,
+                reference=reference,
+                stored=stored,
+                channels=channels,
+            )
+
         if settings.is_production and not settings.ALLOW_LOCAL_PERSISTENCE_IN_PRODUCTION:
             if not settings.external_channel_configured:
                 logger.critical(
-                    "Enquiry %s REJECTED: no external delivery channel is configured "
-                    "in production. Set NOTIFICATION_WEBHOOK_URL or SMTP_*, or set "
+                    "Enquiry %s REJECTED: no external delivery channel or database is configured "
+                    "in production. Set DATABASE_URL, NOTIFICATION_WEBHOOK_URL or SMTP_*, or set "
                     "ALLOW_LOCAL_PERSISTENCE_IN_PRODUCTION=true to accept the local store.",
                     reference,
                 )

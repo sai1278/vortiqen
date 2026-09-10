@@ -1,0 +1,67 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: vortiqen-db
+    environment:
+      POSTGRES_USER: vortiqen
+      POSTGRES_PASSWORD: vortiqen_dev_password
+      POSTGRES_DB: vortiqen
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vortiqen -d vortiqen"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vortiqen-backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_NAME: "Vortiqen API"
+      ENVIRONMENT: "development"
+      DATABASE_URL: "postgresql+asyncpg://vortiqen:vortiqen_dev_password@db:5432/vortiqen"
+      ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+      ALLOW_LOCAL_PERSISTENCE_IN_PRODUCTION: "false"
+      TRUSTED_PROXY_COUNT: "0"
+      RATE_LIMIT_WINDOW_SECONDS: "600"
+      RATE_LIMIT_MAX_REQUESTS: "5"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: "http://localhost:8000"
+    container_name: vortiqen-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local

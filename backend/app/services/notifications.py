@@ -110,15 +110,54 @@ class NotificationService:
             )
             return "failed"
 
+    async def send_baserow(
+        self, payload: ContactCreate, reference: str
+    ) -> ChannelState:
+        if not settings.baserow_configured:
+            return "skipped"
+        body = {
+            "Name": payload.name,
+            "Email": str(payload.email),
+            "Company": payload.company or "",
+            "Service": payload.service or "",
+            "Message": payload.message,
+            "Reference": reference,
+        }
+        headers = {
+            "Authorization": f"Token {settings.BASEROW_API_TOKEN}",
+            "Content-Type": "application/json",
+        }
+        try:
+            async with httpx.AsyncClient(
+                timeout=settings.BASEROW_TIMEOUT_SECONDS
+            ) as client:
+                response = await client.post(
+                    settings.BASEROW_TABLE_URL, json=body, headers=headers
+                )
+            if response.status_code >= 400:
+                logger.error(
+                    "Baserow API rejected enquiry %s with status %s",
+                    reference,
+                    response.status_code,
+                )
+                return "failed"
+            return "ok"
+        except Exception as exc:
+            logger.error(
+                "Baserow API dispatch failed for %s: %s", reference, type(exc).__name__
+            )
+            return "failed"
+
     async def dispatch(
         self, payload: ContactCreate, reference: str
     ) -> dict[str, ChannelState]:
         """Fire every configured channel concurrently."""
-        webhook, email = await asyncio.gather(
+        webhook, email, baserow = await asyncio.gather(
             self.send_webhook(payload, reference),
             self.send_email(payload, reference),
+            self.send_baserow(payload, reference),
         )
-        return {"webhook": webhook, "email": email}
+        return {"webhook": webhook, "email": email, "baserow": baserow}
 
 
 notification_service = NotificationService()

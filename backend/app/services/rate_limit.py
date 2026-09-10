@@ -102,7 +102,7 @@ class InMemoryRateLimiter:
         async with self._lock:
             bucket = self._hits[key]
             # Drop expired hits from the left of the window.
-            while bucket and bucket[0] < cutoff:
+            while bucket and bucket[0] <= cutoff:
                 bucket.popleft()
 
             if len(bucket) >= self.max_requests:

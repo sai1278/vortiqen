@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { ArrowUpRight } from 'lucide-react'
 import Button from './ui/Button'
 import VortiqenMark from './ui/VortiqenMark'
-import { COMPANY, ENQUIRY_URL } from '../data/site'
+import { COMPANY } from '../data/site'
 import { inView, DUR, EASE_OUT } from '../lib/motion'
 
 /**
@@ -12,7 +12,7 @@ import { inView, DUR, EASE_OUT } from '../lib/motion'
  * decelerating arrival rather than a stagger. Everything else has been
  * sequencing; this section settles.
  */
-export default function CTA() {
+export default function CTA({ onOpenEnquiry }) {
 
   return (
     <section
@@ -74,7 +74,7 @@ export default function CTA() {
             className="mt-8 md:mt-12 flex flex-col items-center justify-center gap-3 sm:flex-row"
           >
             <Button
-              href={ENQUIRY_URL}
+              onClick={() => onOpenEnquiry?.()}
               className="w-full sm:w-auto"
             >
               Start a Project
@@ -84,7 +84,7 @@ export default function CTA() {
               />
             </Button>
             <Button
-              href={ENQUIRY_URL}
+              onClick={() => onOpenEnquiry?.()}
               rank="secondary"
               className="w-full sm:w-auto"
             >
@@ -100,10 +100,10 @@ export default function CTA() {
             className="mt-6 md:mt-10 font-mono text-[0.75rem] text-fg-2"
           >
             <a
-              href={`mailto:${COMPANY.email}`}
+              href={`mailto:${COMPANY.email || 'hello@vortiqen.com'}`}
               className="inline-block py-1 underline decoration-[var(--line-strong)] decoration-1 underline-offset-4 transition-colors duration-fast ease-ui hover:text-fg-0 hover:decoration-accent"
             >
-              {COMPANY.email}
+              {COMPANY.email || 'hello@vortiqen.com'}
             </a>
           </motion.p>
         </motion.div>

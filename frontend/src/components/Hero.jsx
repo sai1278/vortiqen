@@ -4,13 +4,12 @@ import { ArrowRight } from 'lucide-react'
 import Button from './ui/Button'
 import HeroVisual from './HeroVisual'
 import { usePointer } from '../hooks/usePointer'
-import { ENQUIRY_URL } from '../data/site'
 import { lineMaskParent, lineMaskChild, DUR, EASE_OUT } from '../lib/motion'
 
 /** The headline, split so each line can reveal from behind its own mask. */
 const HEADLINE = ['We build software', 'that moves', 'businesses forward.']
 
-export default function Hero() {
+export default function Hero({ onOpenEnquiry }) {
   const ref = useRef(null)
   const reduced = useReducedMotion()
   const pointer = usePointer(ref)
@@ -110,7 +109,7 @@ export default function Hero() {
             transition={{ duration: DUR.slow, delay: 0.9, ease: EASE_OUT }}
             className="mt-6 lg:mt-8 flex flex-col gap-3 sm:flex-row sm:items-center"
           >
-            <Button href={ENQUIRY_URL}>
+            <Button onClick={() => onOpenEnquiry?.()}>
               Start a Project
               <ArrowRight
                 className="h-4 w-4 transition-transform duration-fast ease-ui group-hover:translate-x-0.5"
