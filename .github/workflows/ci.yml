@@ -80,14 +80,8 @@ jobs:
           tags: vortiqen/frontend:test
 
       - name: Scan Frontend Image with Trivy
-        uses: aquasecurity/trivy-action@v0.28.0
-        with:
-          image-ref: 'vortiqen/frontend:test'
-          format: 'table'
-          exit-code: '1'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL'
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code 1 --severity CRITICAL --ignore-unfixed vortiqen/frontend:test
 
       - name: Build Backend Image
         uses: docker/build-push-action@v5
@@ -98,11 +92,5 @@ jobs:
           tags: vortiqen/backend:test
 
       - name: Scan Backend Image with Trivy
-        uses: aquasecurity/trivy-action@v0.28.0
-        with:
-          image-ref: 'vortiqen/backend:test'
-          format: 'table'
-          exit-code: '1'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL'
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code 1 --severity CRITICAL --ignore-unfixed vortiqen/backend:test
